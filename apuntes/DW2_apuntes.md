@@ -507,7 +507,7 @@ el `DocumentRoot` está mal puesto.
 
 ### 4.4 Comprobar sin capturas de pantalla
 
-El comprobador está publicado en `dwes/herramientas/comprobar_entorno.sh`. Hay que
+El comprobador está publicado en el repositorio en `material/herramientas/comprobar_entorno.sh`. Hay que
 **descargarlo en tu Windows y copiarlo a la VM** —arrastrándolo a la ventana de VS
 Code conectada, que es lo más rápido— y ejecutarlo **dentro de la VM**:
 
