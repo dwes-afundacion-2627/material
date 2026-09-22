@@ -530,3 +530,292 @@ bash comprobar_entorno.sh | tee ~/proyecto/entorno/comprobacion.txt
 
 La entrega de esta unidad es ese fichero, no una foto de la pantalla.
 
+---
+
+## 5. Las dos formas de ejecutar PHP
+
+Esto es el núcleo de la unidad. El resto existe para poder llegar aquí.
+
+### 5.0 Diez palabras que hacen falta para entender lo que viene
+
+No hay que dominarlas: hay que poder usarlas hoy. Lo demás llega en DW4.
+
+| Palabra | Qué significa aquí |
+|---|---|
+| **Cliente y servidor** | El cliente pide; el servidor responde. Tu navegador y `curl` son clientes; Apache es el servidor |
+| **Petición y respuesta** | Cada página son dos mensajes: uno de ida con lo que se pide y otro de vuelta con el contenido y un **código** |
+| **`localhost`** | «esta misma máquina». Escrito **dentro de la VM** significa la VM; escrito en Windows significa Windows, y por eso desde allí hace falta el puerto 8080 y el reenvío |
+| **Puerto** | El número de la puerta. Apache escucha en el 80; SSH, en el 22 |
+| **Página estática / dinámica** | La estática es un fichero que se manda tal cual (`index.html`). La dinámica es un programa que se ejecuta y **genera** la respuesta (`index.php`) |
+| **Proceso y servicio** | Un proceso es un programa en ejecución, con su número (**PID**) y el de quien lo lanzó (**PPID**). Un servicio es un proceso que el sistema arranca y mantiene vivo |
+| **Maestro y trabajador** | Algunos servicios tienen un proceso **maestro**, que no atiende peticiones, y varios **trabajadores**, que sí. El PPID de los trabajadores es el PID del maestro |
+| **SAPI** | *Server API*: la forma en que PHP se enchufa a quien lo llama. Es el dato que vas a leer |
+| **MPM** | *Multi-Processing Module*: la pieza de Apache que decide cómo reparte las peticiones entre procesos. `prefork` usa un proceso completo por petición; `event` es más eficiente pero no puede llevar PHP cargado dentro |
+| **FastCGI** | El protocolo con el que Apache le pasa una petición a un programa externo (como php-fpm) y recibe la respuesta, sin tener que cargarlo dentro de sí mismo. El módulo que lo habla en Apache es `proxy_fcgi` |
+
+Y dos códigos de respuesta, que en DW4 se ven a fondo:
+
+- **200**, la respuesta normal: aquí está lo que pediste.
+- **503**, *servicio no disponible*: el servidor web está vivo pero no ha podido
+  conseguir la respuesta de quien tenía que generarla.
+
+Una petición a `/traza.php` puede resolverse de **dos maneras distintas en la misma
+máquina**. Antes de tocar ningún comando, así es la diferencia:
+
+```mermaid
+flowchart LR
+    subgraph A["Camino A · módulo integrado"]
+        direction LR
+        C1["Cliente"] --> AP1["Apache (MPM prefork)<br/>con mod_php cargado dentro"]
+        AP1 -.->|"PHP se ejecuta en el<br/>mismo proceso de Apache"| AP1
+    end
+    subgraph B["Camino B · proceso separado (php-fpm)"]
+        direction LR
+        C2["Cliente"] --> AP2["Apache (MPM event)"]
+        AP2 <-->|"protocolo FastCGI<br/>(módulo proxy_fcgi)"| FPM["Pool php-fpm<br/>1 maestro + N trabajadores"]
+    end
+```
+
+En el camino A, Apache y PHP son **el mismo proceso**: parar uno para el otro. En
+el camino B son **dos programas que se hablan por FastCGI**: se puede parar PHP sin
+tocar Apache. Eso es justo lo que vas a comprobar en el apartado 5.3.
+
+Vamos a servir la misma página `/traza.php` por los dos caminos y a leer las dos
+trazas.
+
+El fichero de prueba, en `~/proyecto/public/traza.php`:
+
+```php
+<?php
+echo "SAPI: ", php_sapi_name(), "\n";
+echo "PID:  ", getmypid(), "\n";
+echo "Usuario: ", trim(shell_exec('id -un')), "\n";
+```
+
+Cuatro cosas de este fichero, para poder leerlo sin saber PHP todavía:
+
+- `<?php` abre el trozo de programa; todo lo que va detrás se ejecuta en el servidor.
+- `echo` escribe en la respuesta. Las comas separan los trozos que se escriben
+  seguidos, y `"\n"` es un salto de línea.
+- `php_sapi_name()`, `getmypid()` y `shell_exec()` son **funciones**: se les llama con
+  paréntesis y devuelven un dato. `trim()` quita los espacios sobrantes del resultado.
+- No hay que saber escribirlo. Se usa como un **instrumento de medida**: PHP se está
+  identificando a sí mismo.
+
+`php_sapi_name()` dice **quién está ejecutando PHP**. Es la traza.
+
+### 5.1 Camino A · el módulo integrado en Apache
+
+Los dos caminos son **incompatibles**: el módulo integrado necesita el MPM `prefork`,
+y el servicio aparte usa `event`. Así que cada modo se prepara entero, apagando lo
+del otro. El paquete `php-fpm` deja su servicio **arrancado** nada más instalarse, y
+por eso el camino A empieza parándolo: si no, quedan procesos suyos rondando aunque
+Apache no los use, y la lista de procesos engaña.
+
+```bash
+sudo systemctl stop php8.4-fpm       # tu versión: ls /etc/php/
+sudo a2disconf php8.4-fpm
+sudo a2dismod mpm_event proxy_fcgi
+sudo a2enmod mpm_prefork
+sudo a2enmod php8.4                  # mira tu versión: ls /etc/apache2/mods-available/php*
+sudo apache2ctl configtest           # Syntax OK
+sudo systemctl restart apache2
+curl http://localhost/traza.php
+```
+
+Salida real:
+
+```
+SAPI: apache2handler
+PID:  12444
+Usuario: www-data
+```
+
+Y los procesos de la máquina:
+
+```
+$ ps -eo comm | sort | uniq -c | grep -E "apache|php"
+      6 apache2
+```
+
+Esa orden encadena cuatro cosas con **tuberías** (`|`), que pasan la salida de una a
+la siguiente: `ps -eo comm` lista **todos** los procesos enseñando solo la columna del
+nombre; `sort` los ordena; `uniq -c` agrupa los repetidos y **cuenta** cuántos hay de
+cada uno; y `grep -E "apache|php"` se queda solo con las líneas que contienen
+`apache` **o** `php`.
+
+**Procesos de Apache, y ninguno de PHP.** No hay proceso de PHP porque **PHP está
+dentro de Apache**: el módulo se carga en cada proceso del servidor web y el código
+se ejecuta ahí mismo.
+
+> **El número no es el dato.** Cuántos procesos de Apache haya depende de la máquina y
+> del momento: en la tuya pueden ser cuatro, seis u ocho, y los PID no van a coincidir
+> con los de nadie. Lo que hay que mirar es **qué familias de procesos aparecen** y
+> qué dice la SAPI.
+
+### 5.2 Camino B · el proceso separado (php-fpm)
+
+```bash
+sudo a2dismod php8.4
+sudo a2dismod mpm_prefork
+sudo a2enmod mpm_event proxy_fcgi setenvif
+sudo a2enconf php8.4-fpm
+sudo systemctl start php8.4-fpm
+sudo systemctl enable php8.4-fpm     # que arranque solo al encender la máquina
+sudo apache2ctl configtest           # Syntax OK
+sudo systemctl restart apache2
+curl http://localhost/traza.php
+```
+
+`proxy_fcgi` es el módulo que le da a Apache la mitad cliente del protocolo FastCGI:
+sin él, Apache no sabe hablar con el pool de php-fpm. `setenvif` no es opcional aquí:
+`a2enconf php8.4-fpm` lo necesita para decidir, según la URL, qué peticiones se
+reenvían al pool. `mpm_event` es el MPM que hace falta para poder cargar `proxy_fcgi`,
+por eso los tres se activan juntos.
+
+Salida real:
+
+```
+SAPI: fpm-fcgi
+PID:  12874
+Usuario: www-data
+```
+
+Y los procesos:
+
+```
+$ ps -eo user,pid,ppid,comm | grep -E "apache2|php-fpm"
+root     12873     1     php-fpm8.4      <- el maestro
+www-data 12874 12873     php-fpm8.4      <- trabajador
+www-data 12875 12873     php-fpm8.4      <- trabajador
+root     13266     1     apache2
+www-data 13267 13266     apache2
+www-data 13269 13266     apache2
+```
+
+Ahora hay **dos programas distintos**: Apache atiende la petición y, cuando toca
+PHP, se la pasa a un **pool de procesos** que vive aparte. Eso es un *servidor de
+aplicaciones* integrado con el servidor web.
+
+> **Ver procesos de `php-fpm` no demuestra por sí solo que se estén usando**: pueden
+> estar ahí parados sin atender nada. Lo que lo demuestra es la **SAPI** de la
+> respuesta. Por eso la traza es el instrumento y `ps` solo el acompañamiento.
+
+**Este es el estado en el que se queda la máquina para el resto del curso.** Si
+haces el camino A otra vez para probar, vuelve después a estas órdenes.
+
+### 5.3 La demostración que lo deja claro
+
+Con php-fpm puesto, **tira solo el pool de PHP** y pide las dos cosas:
+
+```
+$ sudo systemctl stop php8.4-fpm
+
+  PHP con el pool parado : 503
+  HTML estatico          : 200
+
+$ sudo systemctl start php8.4-fpm
+
+  tras levantar el pool  : 200      (Apache no se ha reiniciado)
+```
+
+Los dos códigos se piden así, y la orden se lee por partes:
+
+```bash
+curl -s -o /dev/null -w "PHP:  %{http_code}\n" http://localhost/traza.php
+curl -s -o /dev/null -w "HTML: %{http_code}\n" http://localhost/index.html
+```
+
+`-s` calla la barra de progreso; `-o /dev/null` **tira el contenido** de la respuesta,
+porque aquí no interesa; `-w` dice qué escribir al terminar, y `%{http_code}` se
+sustituye por el código de la respuesta. `\n` es el salto de línea, sin el cual los
+dos resultados salen pegados. La petición sale **de la propia VM**, así que aquí
+`localhost` es la VM y el puerto es el 80.
+
+Ahí están los tres argumentos, y no hay que creérselos: se ven.
+
+> **Cuidado con lo que se concluye de esto.** Que un *script* de PHP dé un error, o
+> que un trabajador se muera, no tira ningún servidor: con el módulo integrado Apache
+> usa el MPM `prefork`, que atiende cada petición en un proceso distinto, y las demás
+> siguen. Lo que aquí se compara es **poder parar y reiniciar PHP por separado**: con
+> el módulo integrado, parar PHP significa parar Apache entero —y con él lo
+> estático—; con el servicio aparte, no.
+
+| | Módulo integrado | Proceso separado (php-fpm) |
+|---|---|---|
+| `php_sapi_name()` | `apache2handler` | `fpm-fcgi` |
+| Procesos | PHP dentro de Apache | Un pool aparte, con su maestro |
+| Si el pool de PHP se para | No hay pool: PHP se para **parando Apache**, y con él lo estático | **Apache sigue en pie y sigue sirviendo lo estático** |
+| Reiniciar PHP | Reinicias Apache entero | **Reinicias solo el pool** |
+| Usuario del proceso | El de Apache | **Puede ser otro distinto** |
+| Varias versiones de PHP | Una | **Varias a la vez, un pool cada una** |
+| MPM que puede usar Apache | `prefork` (más memoria) | `event` (más eficiente) |
+
+### 5.4 Lo que hay que poder decir en tres frases
+
+1. **El módulo integrado** mete PHP dentro del servidor web: simple, y todo va en el
+   mismo saco.
+2. **El proceso separado** deja PHP fuera y Apache le pasa el trabajo: se puede
+   reiniciar, aislar y dimensionar por su cuenta.
+3. Por eso a php-fpm se le llama **servidor de aplicaciones**: no sirve ficheros,
+   ejecuta programas, y se **integra** con el servidor web por un protocolo
+   (FastCGI).
+
+---
+
+## Errores típicos
+
+| Síntoma | Qué pasa de verdad |
+|---|---|
+| El navegador descarga el `.php` en vez de ejecutarlo | PHP no está activo en Apache. `a2enmod` o `a2enconf`, y reiniciar |
+| «Forbidden» al abrir la carpeta | Faltan permisos o no hay `index.php`/`index.html` |
+| Cambio el fichero y no cambia nada | Estás editando en Windows, no en la VM. Mira el terminal integrado |
+| `sudo: command not found` | Le pusiste contraseña a root al instalar, así que `sudo` **no está instalado**. Ver abajo |
+| `tuusuario is not in the sudoers file` | `sudo` sí está, pero tu usuario no está en el grupo. Ver abajo |
+| 503 en todo lo PHP | php-fpm está parado. `systemctl status php8.4-fpm` |
+| Funciona con `localhost` en la VM pero no desde Windows | Falta el reenvío de puertos, o Apache escucha solo en 127.0.0.1 |
+
+### Si `sudo` no funciona
+
+Son dos averías distintas y se arreglan de forma distinta. Las dos se hacen **en la
+consola de la VM**, no por SSH.
+
+**Caso 1 · `sudo: command not found`.** El programa no está. Entra como `root` con la
+contraseña que pusiste en el instalador e instálalo:
+
+```bash
+su -                       # pide la contraseña de root
+apt update
+apt install -y sudo
+usermod -aG sudo tuusuario # ahora sí: mete a tu usuario en el grupo
+exit                       # sales de root
+exit                       # cierras la sesión: el grupo nuevo solo se ve al volver a entrar
+```
+
+**Caso 2 · `tuusuario is not in the sudoers file`.** `sudo` está instalado y solo
+falta el grupo: entra como root y ejecuta únicamente la línea del `usermod`, y vuelve
+a iniciar sesión.
+
+> **Si dejaste root sin contraseña y aun así no tienes `sudo`**, no puedes entrar
+> como root: no hay contraseña que valga. Ahí la vía rápida es importar la OVA de
+> rescate (punto 4 de `dwes/GUIA_ENTORNO_WINDOWS.md`) y seguir.
+
+> **Root de Linux y root de MariaDB no tienen nada que ver.** Son dos cuentas de dos
+> sistemas distintos que se llaman igual. La contraseña de una no sirve para la otra.
+
+---
+
+## Resumen en una página
+
+- Debian **sin escritorio**, SSH activado, reenvío `2222→22` y `8080→80`.
+- Root sin contraseña en la instalación → tu usuario tiene `sudo`.
+- Clave SSH **de Windows a la VM**, creada en Windows. La de GitHub es **otra**, y se
+  crea dentro de Debian en DW3.
+- VS Code + Remote-SSH: editas en Windows, ejecutas en la VM.
+- Un solo árbol: `~/proyecto`, con `public/` como `DocumentRoot` y `config/` fuera.
+- `apache2 mariadb-server php libapache2-mod-php php-mysql php-fpm curl git python3`.
+- Usuario de base de datos con **cuatro permisos**, y credenciales **fuera** del
+  árbol público.
+- `php_sapi_name()` es la traza: `apache2handler` frente a `fpm-fcgi`.
+- Con el pool parado, lo estático sigue sirviéndose. Ese es el argumento entero.
+
