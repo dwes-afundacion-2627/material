@@ -1,7 +1,7 @@
 # DW3 · Hoja de ejercicios
 
 **Git y la vía de entrega · DWES · 2º DAW**
-**Semana 2 (22/09 a 24/09) 
+**Semana 2 (22/09 a 24/09)**
 ---
 
 Al final de esta unidad tienes un repositorio con tu proyecto dentro, subido, y
