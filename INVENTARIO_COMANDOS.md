@@ -47,10 +47,10 @@ dudas de en qué máquina estás, `pwd` (Linux) o `Get-Location` (PowerShell).
 
 | Tecla | Cuándo |
 |---|---|
-| `q` | La pantalla se ha quedado fija enseñando texto (un paginador, como el de `systemctl status`) |
+| `q` | La pantalla se ha quedado fija enseñando texto (un paginador, como el de `systemctl status`, `git log`, `git diff` o `git show`) |
 | `Ctrl+C` | Una orden no termina y quieres recuperar el prompt (`tail -f`, `ping` sin `-c`) |
 | `exit` | Cerrar una sesión SSH, salir del cliente de MariaDB o cerrar el terminal |
-| `Ctrl+O`, `Ctrl+X` | Guardar y salir en el editor `nano` |
+| `Ctrl+O`, `Enter`, `Ctrl+X` | Guardar y salir en el editor `nano`. Es también el editor que abre Git si haces `commit` o `merge` sin `-m` |
 
 ---
 
@@ -156,7 +156,7 @@ familias de procesos aparecen** y lo que dice la SAPI.
 | `ssh -p 2222 usuario@localhost` | Se conecta. `-p` es el puerto, antes de la `@` la cuenta, después la máquina |
 | `exit` | Cierra la sesión remota y te devuelve a donde estabas |
 | `ssh-keygen -t ed25519 -C "para-qué-es"` | Crea una **pareja** de claves. `-t` el tipo, `-C` una etiqueta para reconocerla |
-| `ssh -T git@github.com` | Comprueba la identidad contra GitHub sin abrir sesión |
+| `ssh -T git@github.com` | Comprueba la identidad contra GitHub sin abrir sesión. La primera vez pide confirmar la **huella** del servidor: se compara con la que publica GitHub antes de escribir `yes`. Termina diciendo que GitHub *does not provide shell access*: es lo esperado |
 | `ssh-keygen -R "[localhost]:2222"` | Olvida la huella guardada de esa máquina. Se usa al reinstalar o importar la VM |
 
 **Una pareja son dos ficheros**: `id_ed25519` (**privada**, no sale nunca de su
@@ -224,25 +224,37 @@ dos sistemas distintos.
 
 | Orden | Qué hace |
 |---|---|
-| `git config --global user.name "..."` | La **firma** que se graba en cada commit. `--global` = para todos tus repositorios |
-| `git clone URL carpeta` | Se trae un repositorio entero y deja `origin` configurado |
+| `git config --global user.name "..."` | La **identidad de autor** que se graba en cada commit (texto declarado, no una firma criptográfica). `--global` = para todos tus repositorios |
+| `git config --global pull.rebase false` | Que `git pull` junte con una **fusión** cuando tu rama y la de GitHub tienen commits distintos. Sin esto, Git se para y pregunta |
+| `mv proyecto proyecto-dw2` | **No es Git**: renombra la carpeta. En DW3 aparta la de DW2 como respaldo para clonar en su sitio |
+| `git clone URL carpeta` | Se trae un repositorio entero, deja `origin` configurado y tu `main` enlazada con la de GitHub. La URL se copia del botón *Code* → *SSH* |
 | `git status` | En qué rama estás, qué has tocado y qué está preparado. **Ante la duda, esta** |
-| `git add fichero` | **Prepara** el contenido actual de ese fichero. `git add .` prepara todo lo de la carpeta |
-| `git commit -m "mensaje"` | Registra una versión con lo preparado. `-m` es el mensaje |
+| `git add fichero` | **Prepara** el contenido actual de ese fichero. `git add .` prepara todo lo de la carpeta actual —nuevos, modificados y borrados—, salvo lo ignorado: `git status` antes del commit |
+| `git commit -m "mensaje"` | Registra una versión con lo preparado. `-m` es el mensaje: en este curso, **verbo en infinitivo** (`Añadir…`, `Validar…`). Un segundo `-m` añade un cuerpo |
+| `git commit --amend --only -m "..."` | Cambia el mensaje del **último** commit sin meter lo preparado. **Solo si todavía no has hecho `push`** |
+| `git check-ignore -v fichero` | Dice **qué línea** del `.gitignore` ignora ese fichero. Si no dice nada, no se ignora |
+| `git ls-files fichero` | Dice si Git **sigue** ese fichero. Para una contraseña, tiene que salir vacío |
+| `git restore fichero` | Descarta lo que has cambiado **y no has preparado**: vuelve a lo preparado o, si no había, al último commit. **Borra** esos cambios |
+| `git restore --source=HEAD -- fichero` | Deja el fichero exactamente como en el último commit |
+| `git restore --staged fichero` | Deshace el `add`: deja de estar preparado, y tu fichero no cambia |
 | `git diff` | Lo que has cambiado y **aún no has preparado** |
 | `git diff --staged` | Lo que está preparado y **entra en el próximo commit** |
-| `git log --oneline` | Una línea por versión. El código del principio es el `<hash>` |
-| `git push -u origin main` | Sube. `origin` es el remoto, `main` la rama, `-u` deja la pareja apuntada para las siguientes |
-| `git pull` | Baja lo que haya cambiado en el remoto |
+| `git log --oneline` | Una línea por versión. El código del principio es el `<hash>`. Se sale con `q` |
+| `git show <hash>:ruta` | Cómo era ese fichero en ese commit |
+| `git push` | Sube tus commits a GitHub. Tras un `clone` no hace falta más. `git push -u origin main` hace lo mismo y además fija el enlace |
+| `git pull` | **Trae y junta**: descarga lo de GitHub y lo fusiona con tu rama. Puede dar conflicto. Antes, `git status` limpio |
 | `git switch -c rama` | Crea una rama y se cambia a ella. **Falla si ya existe una con ese nombre** |
 | `git switch main` | Vuelve a la rama principal |
-| `git merge --no-ff rama` | Junta el trabajo de la rama. `--no-ff` fuerza un commit de fusión, para que quede constancia |
+| `git merge --no-ff -m "Fusionar la rama X" rama` | Junta el trabajo de la rama. `--no-ff` fuerza un commit de fusión, para que quede constancia; `-m` evita que se abra el editor |
+| `git merge --abort` | A mitad de un conflicto: deja todo como estaba antes del `merge` |
 | `git branch -d rama` | Borra una rama ya fusionada, y deja el nombre libre |
+| `grep -nE '^(<<<<<<<\|=======\|>>>>>>>)' fichero` | **No es Git**: busca marcas de conflicto que se hayan quedado. No tiene que salir nada |
 | `php -l fichero.php` | **No es Git**: comprueba que el fichero es PHP válido. Se usa tras resolver un conflicto, antes de commitear |
+| `python3 ~/herramientas/comprobar_historial.py .` | **No es Git**: pasa el comprobador, guardado **fuera** del repositorio. El `.` es un argumento: la carpeta a examinar, «esta» |
 
 **Guardar no es versionar.** `Ctrl+S` escribe el fichero en el disco; `git add` lo
 prepara; `git commit` registra la versión; `git push` la envía. Son cuatro pasos
 distintos.
 
-**El `.gitignore` va antes del primer `add`.** Solo afecta a lo que Git todavía no
-sigue: lo que entra una vez en el historial, ya no sale.
+**El `.gitignore` se amplía antes del primer `add`.** Solo afecta a lo que Git todavía
+no sigue, y borrar un fichero en un commit posterior no lo borra de los anteriores.
