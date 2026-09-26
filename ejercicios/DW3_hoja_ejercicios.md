@@ -169,7 +169,7 @@ bueno**. El segundo `-m` es el cuerpo:
 
 ```bash
 git add config/credenciales.php.ejemplo
-git commit -m "Añadir el ejemplo de credenciales sin secretos" \
+git commit -m "Añadir el ejemplo de credenciales sin secretos" 
            -m "Escribe aquí, en una o dos frases, por qué se sube este y no el bueno."
 ```
 
