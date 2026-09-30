@@ -629,8 +629,7 @@ configuraste en DW2— **y para este ejemplo**. No es una propiedad general de P
 
 ---
 
-## 5. Servidor o cliente: qué código viaja
-
+## 5. Servidor o cliente: qué código viaja (¡¡¡ATENCIÓN!!! 4.4 de http/cuaderno.md)
 Dos ficheros que producen **el mismo aviso en la pantalla** y funcionan de forma
 completamente distinta. Los dos están en `dwes/recursos/DW4/`.
 
@@ -770,7 +769,7 @@ petición inmediata devolvió `09:00` y la de tres segundos después, `10:00`.
 
 ---
 
-## 6. Estática, pequeñas inserciones o aplicación organizada
+## 6. Estática, pequeñas inserciones o aplicación organizada (En practica_dw4, 5 · Ahora tú · AT4.2 · El museo)
 
 Tres formas de producir una página. **Las tres pueden dar contenido que cambia**: lo
 que las distingue no es eso.
