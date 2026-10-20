@@ -1,7 +1,6 @@
 # DW5 · Hoja de ejercicios
 
 **PHP embebido: sintaxis, variables y directivas · DWES · 2º DAW**
-**Semanas 2 y 3 (21/09 a 28/09) · 8 sesiones**
 
 ---
 
