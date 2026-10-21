@@ -1461,7 +1461,7 @@ llevas es *la del servidor se pregunta desde una página*, no *son iguales*.
 
 | Paso | Qué haces | Qué tienes que ver |
 |---|---|---|
-| 1 | `apache2 -v` | `Server version: Apache/2.4.x` → el **servidor web** |
+| 1 | `apache2 -v` o `/usr/sbin/apache2 -v` | `Server version: Apache/2.4.x` → el **servidor web** |
 | 2 | Crea `public/sapi.php` con `<?php echo php_sapi_name(), ' ', PHP_VERSION;` y pídelo con `curl` | `apache2handler` o `fpm-fcgi`, y la versión **del servidor** |
 | 3 | `php -v` | La versión **del cliente de terminal**. Compárala con la del paso 2: en esta VM lo normal es que **salga la misma**, y eso no demuestra que tengan que serlo |
 | 4 | `mariadb --version` o `systemctl status mariadb` | → el **almacén de datos** |
