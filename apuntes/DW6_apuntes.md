@@ -836,3 +836,192 @@ Escribe nivel(int $n): string, de cuatro posiciones: + para las activas y . para
 Cierra misiones() y escribe hay_plazas(), ocupacion(), barra() y plazas_libres_totales(). Añade sus bloques de documentación; filtrar() se trabaja en el apartado 6.
 
 ---
+
+## 6. Filtros combinables
+
+**En este punto:** G6 → AT6.8 → **E6.3 y E6.4**.
+
+### La explicación
+
+Filtrar no es borrar el tablón original. Se crea `$salida = []`, se revisa cada misión y se añaden solo las admitidas. Es más fácil comprobar una función que devuelve datos que una plantilla que mezcla filtros, cálculos e impresión.
+
+```php
+$categoria_ok = ($categoria === null) || ($m['categoria'] === $categoria);
+$plazas_ok = !$solo_libres || hay_plazas($m);
+if ($categoria_ok && $plazas_ok) {
+    $salida[] = $m;
+}
+```
+
+Si no pedimos categoría, todas pasan la primera condición. Si no pedimos «solo libres», todas pasan la segunda. Pero, cuando activamos los dos filtros, una misión debe cumplir ambos. Una categoría inexistente produce un array vacío, no un error.
+
+El resumen distingue dos cantidades: cuántas misiones son visibles y cuántas plazas libres tiene el tablón completo. Filtrar no debe alterar la segunda.
+
+### En directo · G6 · Dos filtros sobre talleres
+
+**Enunciado:**
+
+Crea una colección con estos talleres, usando las claves `titulo`, `tipo` y `plazas`: Mapa (aire, 2), Cuerda (aire, 0) y Radio (aula, 3).
+
+1. Define `seleccionar(array $talleres, ?string $tipo = null, bool $libres = false): array` para devolver una nueva colección con los talleres admitidos, manteniendo su orden.
+2. El tipo null admite todos los tipos; cualquier otro valor exige coincidencia. Si `$libres` es true, exige además plazas mayores que cero; si es false, no restringe las plazas.
+3. Combina ambas condiciones con `&&`. No modifiques la colección original ni imprimas dentro de la función.
+4. Llama a la función con aire y true. Presenta los títulos filtrados en una lista HTML, escapados con `h()`, y muestra cuántos talleres originales y visibles hay.
+5. Si no hay resultados, muestra un mensaje explicativo.
+
+La primera prueba debe mostrar solo Mapa, con 3 originales y 1 visible. Prueba también sin filtros y con un tipo inexistente: deben quedar 3 y 0 visibles, respectivamente. Los valores se escriben en el código, sin `$_GET`.
+
+**Objetivo:** Construir una lista de resultados manteniendo la original.
+
+**Antes de ejecutar:** ¿Qué talleres pasan si pedimos aire libre y plazas?
+
+
+#### Solución HTML · G6
+
+Guarda este código en un archivo PHP y ábrelo mediante la URL del servidor.
+
+```php
+<?php
+    declare(strict_types=1);
+    require __DIR__ . '../src/funciones.php';
+    
+    function seleccionar(array $talleres, ?string $tipo = null, bool $libres = false): array {
+        $salida = [];
+        foreach ($talleres as $t) {
+            $cumpleTipo = $tipo === null || $t['tipo'] === $tipo;
+            $cumplePlazas = !$libres || $t['plazas'] > 0;
+            if ($cumpleTipo && $cumplePlazas) {
+                $salida[] = $t;
+            }
+        }
+        return $salida;
+    }
+    
+    $talleres = [
+        ['titulo' => 'Mapa', 'tipo' => 'aire', 'plazas' => 2],
+        ['titulo' => 'Cuerda', 'tipo' => 'aire', 'plazas' => 0],
+        ['titulo' => 'Radio', 'tipo' => 'aula', 'plazas' => 3],
+    ];
+    
+    $visibles = seleccionar($talleres, 'aire', true);
+?>
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>G6 · Filtrar talleres</title>
+</head>
+<body>
+    <h1>G6 · Filtrar talleres</h1>
+    <?php if ($visibles === []): ?>
+        <p>No hay talleres que cumplan los filtros.</p>
+    <?php endif; ?>
+    <ul>
+    <?php foreach ($visibles as $t): ?>
+        <li><?= h($t['titulo']) ?></li>
+    <?php endforeach; ?>
+    </ul>
+    <p>Originales: <?= count($talleres) ?>; visibles: <?= count($visibles) ?></p>
+</body>
+</html>
+```
+
+Las comprobaciones del `foreach` de la función `seleccionar` serían equivalentes a:
+```php
+$salida = [];
+
+foreach ($talleres as $t) {
+    // Si no se pide un tipo, se admite cualquiera.
+    if ($tipo === null) {
+        $cumpleTipo = true;
+    } else {
+        $cumpleTipo = $t['tipo'] === $tipo;
+    }
+
+    // Si el filtro de plazas está desactivado, se admiten todos.
+    if ($libres === false) {
+        $cumplePlazas = true;
+    } else {
+        $cumplePlazas = $t['plazas'] > 0;
+    }
+
+    // El taller debe cumplir las dos condiciones.
+    if ($cumpleTipo && $cumplePlazas) {
+        $salida[] = $t;
+    }
+}
+
+return $salida;
+```
+
+| Paso | Qué haces | Qué debes observar al ejecutar el código |
+|---|---|---|
+| 1 | Activa aire y libres | Solo Mapa; 3 originales y 1 visible. |
+| 2 | Desactiva los dos filtros | 3 resultados. |
+| 3 | Usa tipo inventado | 0 resultados; los originales siguen siendo 3. |
+
+**Resultado esperado del ejemplo base:**
+
+```text
+Mapa
+Originales: 3; visibles: 1
+```
+
+**Fallo provocado y recuperación:** Combina las condiciones finales con ||: entrarán talleres que solo cumplen una. Recupera &&.
+
+**Si no coincide:** comprueba primero el archivo que estás ejecutando, los datos de partida y el primer aviso. No cambies varias cosas a la vez.
+
+
+### Ahora tú · AT6.8 · Seleccionar material
+
+**Individual · sin entrega ni nota.**
+
+Con Mapa (papel, 2), Cuaderno (papel, 0) y Cuerda (equipo, 3), escribe seleccionar_material con categoría opcional y un booleano que exija unidades. Debe devolver datos. Prueba los dos filtros juntos, sin filtros y una categoría inexistente.
+
+**Comprobación esperada:** papel + disponible: solo Mapa. Sin filtros: 3 elementos. Categoría inexistente: [].
+
+**Esqueleto opcional:** úsalo solo si necesitas un punto de partida. Los TODO no están resueltos.
+
+```php
+<?php
+    declare(strict_types=1);
+    require __DIR__ . '../src/funciones.php';
+    
+    function seleccionar_material(array $items, ?string $tipo = null, bool $disponible = false): array {
+        $resultado = [];
+        // TODO: recorrer y combinar ambos filtros.
+        return $resultado;
+    }
+    
+    $items = [
+        ['nome' => 'Mapa', 'tipo' => 'papel', 'unidades' => 2],
+        ['nome' => 'Cuaderno', 'tipo' => 'papel', 'unidades' => 0],
+        ['nome' => 'Cuerda', 'tipo' => 'equipo', 'unidades' => 3],
+    ];
+    
+    $visibles = seleccionar_material($items, 'papel', true);
+?>
+
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Seleccionar material</title>
+</head>
+    <body>
+    <h1>Seleccionar material</h1>
+    <!-- TODO: lista con los nombres escapados o mensaje de vacío. -->
+    </body>
+</html>
+```
+
+
+
+**Presentación en HTML:** muestra los resultados en párrafos, listas o tablas usando `<?= ... ?>`. Escapa los textos con `h()`. Si inspeccionas tipos con `var_dump()`, hazlo dentro de `<pre>` como comprobación auxiliar.
+
+### Aplicación a la entrega · E6.3 y E6.4
+
+Implementa filtrar() y prueba llamadas directas. No leas $_GET: los parámetros de URL se incorporan en DW7.
+
+---
