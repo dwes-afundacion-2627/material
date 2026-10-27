@@ -60,9 +60,8 @@ Conservamos la separación de DW5: los cálculos y las decisiones preparan los r
 | 4. Bucles | G4 | AT6.4 y AT6.5 | Prepara E6.2 y E6.4 |
 | 5. Funciones | G5 | AT6.6 y AT6.7 | E6.1 y E6.4 |
 | 6. Filtros | G6 | AT6.8 | E6.3 y E6.4 |
-| 7. HTML | G8 | AT6.10 | E6.2 y E6.3 |
-| 8. Reutilización | Recupera G5 y G8; sin guiado nuevo | Comprobación de dos páginas | E6.4 y E6.5 |
-| 9. Ámbito | G7 | AT6.9 | E6.6 |
+| 7. HTML | G8 | AT6.9 | E6.2 y E6.3 |
+| 8. Ámbito |  |  |  |
 
 Los identificadores G y AT se conservan para que coincidan con los archivos de soluciones. Por eso G3 y AT6.3 aparecen antes de G2 y AT6.2: primero trabajamos arrays y después la ausencia de datos.
 
@@ -1025,3 +1024,179 @@ Con Mapa (papel, 2), Cuaderno (papel, 0) y Cuerda (equipo, 3), escribe seleccion
 Implementa filtrar() y prueba llamadas directas. No leas $_GET: los parámetros de URL se incorporan en DW7.
 
 ---
+
+## 7. Generar HTML y mostrar el vacío
+
+**En este punto:** G8 → AT6.9 → **E6.2 y E6.3**.
+
+### La explicación
+
+```php
+<?php if ($visibles === []): ?>
+    <p class="vacio">No hay misiones que cumplan el filtro.</p>
+<?php endif; ?>
+<?php foreach ($visibles as $m): ?>
+    <div class="mision"><h2><?= h($m['titulo']) ?></h2></div>
+<?php endforeach; ?>
+```
+
+En este ejemplo usamos la **sintaxis alternativa de PHP**, que resulta cómoda cuando mezclamos PHP y HTML. Funciona igual que los bloques con llaves `{ }`: los dos puntos `:` indican dónde empieza el bloque y `endif;` o `endforeach;` indican dónde termina.
+
+Aunque cerremos un fragmento de PHP con `?>`, **el bloque sigue abierto**. Por eso, el HTML situado entre el `if` y el `endif` solo se muestra cuando se cumple la condición. Del mismo modo, el HTML entre el `foreach` y el `endforeach` se repite una vez por cada misión.
+
+Si `$visibles` está vacío, se muestra el mensaje «No hay misiones que cumplan el filtro» y el bucle no genera ninguna ficha. Si contiene misiones, no aparece el mensaje y se genera una ficha por cada una.
+
+Todo esto se ejecuta en el servidor: **el navegador recibe el HTML generado**, no las instrucciones PHP.
+### En directo · G8 · Del array al HTML
+
+**Enunciado:**
+
+Crea una página PHP que genere fichas HTML a partir de `$visibles`, una colección que inicialmente contiene un taller con el título `Taller <cuerdas>`.
+
+1. Usa un `foreach` en el HTML para crear un `<div class="taller">` por entrada.
+2. Dentro de cada ficha, muestra el título en un `<h2>` usando la función de apoyo `h()`.
+3. Si la colección está vacía, muestra el párrafo No hay talleres.
+4. Comprueba el resultado en el navegador y en el código fuente recibido. Después cambia `$visibles` a `[]` y repite.
+
+El título debe verse completo como texto, incluidos los signos `<` y `>`. En el código fuente deben aparecer como `&lt;` y `&gt;`. Con la colección vacía debe aparecer el mensaje y no generarse ningún div de taller. La función `h()` se proporciona como apoyo de DW5.
+
+**Objetivo:** Generar fichas y hacer visible el caso vacío.
+
+**Antes de ejecutar:** ¿Qué verá el navegador si el título incluye <cuerdas>?
+
+
+#### Solución HTML · G8
+
+Guarda este código en un archivo PHP y ábrelo mediante la URL del servidor.
+
+```php
+<?php
+    declare(strict_types=1);
+    require __DIR__ . '../src/funciones.php';
+    
+    $visibles = [['titulo' => 'Taller <cuerdas>']];
+?>
+
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Talleres</title></head>
+<body>
+    <h1>Talleres</h1>
+    <?php if ($visibles === []): ?>
+        <p>No hay talleres.</p>
+    <?php endif; ?>
+    <?php foreach ($visibles as $t): ?>
+        <div class="taller">
+            <h2><?= h($t['titulo']) ?></h2>
+        </div>
+    <?php endforeach; ?>
+</body>
+</html>
+```
+
+| Paso | Qué haces | Qué debes observar al ejecutar el código |
+|---|---|---|
+| 1 | Abre la página en el navegador | Taller <cuerdas>, como texto literal. |
+| 2 | Mira el código fuente recibido | &lt;cuerdas&gt;, no la etiqueta interpretada. |
+| 3 | Cambia visibles a [] | Mensaje de vacío y ninguna ficha. |
+
+**Resultado esperado del ejemplo base:**
+
+```text
+Una ficha con el título literal Taller <cuerdas>; en la fuente figura &lt;cuerdas&gt;.
+```
+
+### Ahora tú · AT6.9 · Una lista que explica el vacío
+
+**Individual · sin entrega ni nota.**
+
+Genera una lista HTML con los nombres `Mapa <Norte>` y Cuerda. Escapa el texto. Después usa una colección vacía y muestra "No hay material". Comprueba en el navegador y en la fuente.
+
+**Comprobación esperada:** Dos elementos; el `<` aparece como `&lt;` en la fuente. Con la lista vacía, mensaje y ningún li.
+
+**Esqueleto opcional:** úsalo solo si necesitas un punto de partida. Los TODO no están resueltos.
+
+```php
+<?php
+declare(strict_types=1);
+// Apoyo de DW5 para este archivo independiente; no hay que volver a definirlo en el proyecto.
+function h(string $texto): string {
+    return htmlspecialchars($texto, ENT_QUOTES, 'UTF-8');
+}
+$nomes = ['Mapa <Norte>', 'Cuerda'];
+?>
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Una lista que explica el vacío</title>
+</head>
+<body>
+<h1>Una lista que explica el vacío</h1>
+<!-- TODO: mensaje de vacío o lista con cada nombre escapado. -->
+</body>
+</html>
+```
+
+
+
+**Presentación en HTML:** muestra los resultados en párrafos, listas o tablas usando `<?= ... ?>`. Escapa los textos con `h()`. Si inspeccionas tipos con `var_dump()`, hazlo dentro de `<pre>` como comprobación auxiliar.
+
+### Aplicación a la entrega · E6.2 y E6.3
+
+Integra la colección, las funciones y los filtros en public/tablon.php. El resumen suma las plazas del tablón completo, no solo las visibles.
+
+---
+
+## 8. Ámbito y retorno
+
+Esto **hay que verlo fallar**. Ejecutado tal cual:
+
+```php
+<?php
+$contador = 0;
+
+function sumar() {
+    $contador = $contador + 1;   // NO es el de fuera
+    return $contador;
+}
+
+echo sumar(), "\n";
+echo sumar(), "\n";
+echo $contador, "\n";
+```
+
+Salida real:
+
+```
+PHP Warning:  Undefined variable $contador in ambito.php on line 5
+1
+PHP Warning:  Undefined variable $contador in ambito.php on line 5
+1
+0
+```
+
+Tres cosas que leer ahí:
+
+1. **El aviso.** Dentro de la función, `$contador` **no existe**: es otra variable, en
+   otro sitio.
+2. **Sale 1 las dos veces**, no 1 y 2. Cada llamada empieza de cero.
+3. **El de fuera sigue valiendo 0.** La función no lo tocó.
+
+Una función **no ve** las variables de fuera, y las de dentro **mueren** al terminar.
+
+La forma correcta es pasar y devolver:
+
+```php
+function sumar(int $contador): int
+{
+    return $contador + 1;
+}
+
+$contador = 0;
+$contador = sumar($contador);
+$contador = sumar($contador);
+echo $contador;      // 2
+```
+
+> Existe `global` y existe `static`. **En este módulo no se usan.** Si necesitas un
+> dato dentro de una función, se lo pasas.
