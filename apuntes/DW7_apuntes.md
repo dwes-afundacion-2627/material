@@ -27,8 +27,7 @@ proyecto/
 ├── src/
 │   ├── funciones.php                 # h(), dias_entre() y funciones de DW6
 │   ├── tablon.php                    # misiones() de DW6
-│   ├── formularios_demo.php          # Apoyo creado en G3
-│   └── talleres_demo.php             # Apoyo creado en G6
+│   └── formularios_demo.php          # Apoyo creado en G3
 └── plantillas/
     └── formulario_taller_demo.php    # Creada en G4
 
@@ -641,3 +640,161 @@ Prueba también un nombre como `Taller "Norte" <b>`. Debe conservarse como texto
 **Fallo provocado y recuperación:** reinicia temporalmente `$valores` después de la validación. Observa que el formulario se vacía aunque los datos hubieran llegado. Restaura el orden.
 
 ---
+
+## 5. Simular un guardado y redirigir: POST → redirect → GET
+
+### Por qué redirigir después de un POST
+
+Si envías un formulario mediante POST y PHP devuelve directamente una página, esa página es la respuesta al POST. Al pulsar F5, el navegador puede pedir confirmación para reenviar los mismos datos. En una aplicación que guarda información, repetir ese envío podría crear otro registro.
+
+Para terminar en una página que pueda actualizarse sin reenviar el formulario, utilizamos el patrón **POST → redirect → GET**, abreviado PRG:
+
+```text
+El navegador envía el formulario mediante POST
+       ↓
+PHP valida los campos
+       ↓
+Si hay errores → 422 y formulario con los valores conservados
+Si no hay errores → simular que el guardado ha sido correcto
+       ↓
+PHP responde con 303 y una cabecera Location
+       ↓
+El navegador realiza un GET a la dirección indicada
+       ↓
+F5 repite ese GET, no el POST anterior
+```
+
+En este guiado **no vamos a guardar datos realmente**. Una función simulará una operación de guardado correcta. No se crea ningún JSON ni se utiliza una base de datos o una sesión. Así podemos centrarnos en el recorrido de las peticiones. En DW8 sustituiremos la simulación por una inserción en MariaDB.
+
+### Qué hacen `header()` y `exit`
+
+```php
+header('Location: /DW7/g5.php', true, 303);
+exit;
+```
+
+- `Location` indica la dirección que debe consultar el navegador.
+- `true` indica que esta cabecera sustituye a otra del mismo tipo que se hubiese preparado antes.
+- `303` indica que el resultado se consulta en otra petición; después de este POST, el navegador realizará un GET.
+- `exit` termina la ejecución. `header()` prepara la respuesta, pero por sí sola no detiene el programa.
+
+Estas instrucciones deben ejecutarse **antes de enviar HTML**, mensajes con `echo`, salidas de depuración o espacios fuera de PHP. Si ya se ha enviado salida, puede aparecer «headers already sent».
+
+### En directo · G5 · Guardado simulado y redirección
+
+**Enunciado:** reutiliza el formulario de G4 y la validación de G3. Si hay errores, devuelve 422 y conserva los valores. Si los datos son válidos, simula un guardado correcto y redirige a la misma página. La nueva petición GET debe mostrar un aviso que indique claramente que no se ha guardado información real.
+
+**Archivos que reutilizas:**
+
+- `src/funciones.php`, con `h()`.
+- `src/formularios_demo.php`, con `leer_texto()` y `validar_taller()`.
+- `plantillas/formulario_taller_demo.php`, que utiliza `$accion`, `$valores` y `$errores`.
+
+**Página completa:** `public/DW7/g5.php`.
+
+```php
+<?php
+declare(strict_types=1);
+
+date_default_timezone_set('Europe/Madrid');
+require_once __DIR__ . '/../../src/funciones.php';
+require_once __DIR__ . '/../../src/formularios_demo.php';
+
+function simular_guardado_taller(array $taller): bool
+{
+    // Recibimos los datos validados, pero no los almacenamos.
+    // true representa que la operación simulada ha terminado correctamente.
+    return true;
+}
+
+$accion = '/DW7/g5.php';
+$valores = ['nombre' => '', 'plazas' => '', 'fecha' => ''];
+$errores = [];
+$error_guardado = '';
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+    // Conservar el texto para devolverlo si hay algún error.
+    foreach ($valores as $campo => $valor) {
+        $valores[$campo] = leer_texto($_POST, $campo);
+    }
+
+    [$datos, $errores] = validar_taller($_POST, date('Y-m-d'));
+
+    if ($errores !== []) {
+        http_response_code(422);
+    } else {
+        $guardado = simular_guardado_taller($datos);
+
+        if ($guardado) {
+            header('Location: ' . $accion . '?guardado=simulado', true, 303);
+            exit;
+        }
+
+        // Permite probar también un fallo simulado del guardado.
+        http_response_code(500);
+        $error_guardado = 'La simulación del guardado ha fallado.';
+    }
+}
+
+$mostrar_aviso = (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET')
+    && (($_GET['guardado'] ?? '') === 'simulado');
+?>
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>G5 · Guardado simulado y redirección</title>
+</head>
+<body>
+    <h1>Solicitud de taller</h1>
+
+    <?php if ($mostrar_aviso): ?>
+        <p>Guardado simulado completado. No se han almacenado datos reales.</p>
+    <?php endif; ?>
+
+    <?php if ($error_guardado !== ''): ?>
+        <p><?= h($error_guardado) ?></p>
+    <?php endif; ?>
+
+    <?php require __DIR__ . '/../../plantillas/formulario_taller_demo.php'; ?>
+</body>
+</html>
+```
+
+### Paso a paso: qué sucede en cada petición
+
+**1. Abres `/DW7/g5.php`.** El navegador realiza un GET. PHP inicializa los valores vacíos, no entra en el bloque POST y muestra el formulario.
+
+**2. Envías datos incorrectos.** Por ejemplo, nombre `Orientación`, plazas `9` y una fecha válida. PHP conserva el texto, valida y responde con 422. No llama a la simulación ni redirige. La plantilla muestra el error de plazas y los valores escritos.
+
+**3. Corriges las plazas a `3` y envías.** La validación devuelve un array de errores vacío. Se llama a `simular_guardado_taller($datos)`, que devuelve `true`. La página responde con 303 y `Location`; `exit` impide generar el formulario en esa respuesta.
+
+**4. El navegador sigue la redirección.** Solicita `/DW7/g5.php?guardado=simulado` mediante GET. Esta es otra ejecución de PHP: no recibe los campos POST anteriores. `$valores` vuelve a empezar vacío y se muestra el aviso de simulación.
+
+**5. Pulsas F5.** Se repite el GET y permanece el aviso porque el parámetro continúa en la URL. No vuelve a ejecutarse la simulación: esa llamada está dentro del bloque POST.
+
+### Qué se conserva y qué desaparece
+
+La función simulada recibe `$taller` para representar la entrada de una futura función de guardado, pero no utiliza esos datos ni los almacena. Devuelve siempre `true` en su versión inicial. No demuestra que haya ocurrido una operación real sobre un archivo o una base.
+
+Los datos de `$datos`, `$valores` y `$_POST` no se trasladan automáticamente al siguiente GET. Lo que viaja en la redirección es la URL, que solo contiene la marca `guardado=simulado`.
+
+Esa marca controla el aviso, **no acredita un guardado**. Puedes escribirla manualmente en el navegador y verás el mismo texto. Si la quitas de la URL, el aviso desaparece. Por eso el mensaje explica que se trata de una simulación.
+
+### Comprobaciones en el navegador
+
+Abre las herramientas de desarrollo, entra en **Red/Network** y activa la opción de conservar el registro de peticiones. Así podrás ver el POST aunque después se cargue la página de destino.
+
+| Prueba | Resultado esperado |
+|---|---|
+| Abrir la página sin parámetros | GET 200, formulario vacío y sin aviso. |
+| Enviar plazas 9 con los demás campos válidos | POST 422, mensaje de error y valores conservados. |
+| Enviar todos los campos válidos | POST 303 seguido de GET 200 con aviso. |
+| Actualizar la página de destino | GET 200; no se repite el POST. |
+| Quitar `?guardado=simulado` | GET 200 sin el aviso. |
+
+**Fallo provocado y recuperación:** cambia únicamente `return true;` por `return false;` dentro de `simular_guardado_taller()`. Envía datos válidos. Debe responder con 500, mostrar el fallo simulado y conservar el formulario sin redirigir. Restaura `return true;` al terminar.
+
+Un 422 significa que los datos no superan las reglas; el 500 de esta prueba representa un fallo en la operación posterior, aunque los datos sean válidos. No añadas un error de plazas para simular un fallo de almacenamiento: son situaciones distintas.
+
+PRG evita repetir el POST anterior al actualizar la página de destino. No impide por sí solo todos los duplicados, por ejemplo dos envíos independientes del formulario.
