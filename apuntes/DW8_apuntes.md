@@ -591,15 +591,13 @@ El siguiente apoyo resuelve la lectura del importe. No necesitas memorizar la ex
 <?php
 declare(strict_types=1);
 
-function normalizar_precio(string $texto): ?string
+function validar_precio(string $texto): ?float
 {
-    $texto = str_replace(',', '.', trim($texto));
-    if (preg_match('/\A(0|[1-9][0-9]{0,5})(?:\.[0-9]{1,2})?\z/', $texto) !== 1) {
+    $precio = filter_var(trim($texto), FILTER_VALIDATE_FLOAT);
+    if ($precio === false || $precio < 0 || $precio > 999999.99) {
         return null;
     }
-    $partes = explode('.', $texto);
-    $decimales = $partes[1] ?? '';
-    return $partes[0] . '.' . str_pad($decimales, 2, '0');
+    return $precio;
 }
 ```
 
@@ -614,7 +612,7 @@ Ejemplos: `0` → `0.00`; `6,75` → `6.75`; `12.5` → `12.50`; `-1`, `tres`, `
 **Añadir al archivo existente:** `src/productos_bd.php`.
 
 ```php
-function filtrar_productos(PDO $db, ?string $precio_maximo, bool $con_stock): array
+function filtrar_productos(PDO $db, ?float $precio_maximo, bool $con_stock): array
 {
     $sql = 'SELECT id, nombre, descripcion, precio, stock, categoria_id
             FROM producto WHERE 1 = 1';
@@ -655,7 +653,7 @@ $error = '';
 if (!is_string($recibido)) {
     $error = 'El precio máximo debe ser un valor de texto.';
 } elseif ($texto_maximo !== '') {
-    $precio_maximo = normalizar_precio($texto_maximo);
+    $precio_maximo = validar_precio($texto_maximo);
     if ($precio_maximo === null) {
         $error = 'Introduce un precio de 0 a 999999.99, con hasta dos decimales.';
     }
@@ -719,3 +717,196 @@ if ($error !== '') {
 | `tres` | Cualquiera | 400, sin consulta |
 
 La casilla se interpreta por presencia mediante `isset()`. Por tanto, una URL escrita a mano con `stock=0` también la activa. Ninguno de estos filtros modifica los registros almacenados.
+
+## 7. Crear un producto: formulario, INSERT y redirección
+
+### Separar las responsabilidades
+
+El formulario recoge texto. La validación prepara datos y errores. La función de acceso a datos ejecuta un INSERT. La página decide si muestra 422, comunica un fallo 500 o redirige con 303. El patrón es el de DW7, pero el destino del guardado es MariaDB.
+
+`lastInsertId()` obtiene el ID autogenerado en esa conexión y lo devuelve como cadena; lo convertimos a entero para cumplir `: int`. No calcules el siguiente ID con COUNT o MAX.
+
+`rowCount()` sirve para observar filas afectadas por INSERT, UPDATE o DELETE. Para contar resultados de SELECT utiliza `COUNT(*)` o `count()` del array recuperado, no dependas de `rowCount()`.
+
+### En directo · G7 · Alta de un producto
+
+**Enunciado:** crea un producto con nombre, descripción opcional, precio, stock y categoría elegida de la base. Conserva los valores al fallar y redirige a la ficha al guardar correctamente.
+
+**Paso 1. Añade las funciones para cargar categorías y guardar.**
+
+**Añadir al archivo existente:** `src/productos_bd.php`.
+
+```php
+function listar_categorias_producto(PDO $db): array
+{
+    return $db->query('SELECT id, nombre FROM categoria_producto ORDER BY nombre')->fetchAll();
+}
+
+function anadir_producto(PDO $db, array $datos): int
+{
+    $consulta = $db->prepare(
+        'INSERT INTO producto (nombre, descripcion, precio, stock, categoria_id)
+         VALUES (?, ?, ?, ?, ?)'
+    );
+    $consulta->execute([
+        $datos['nombre'], $datos['descripcion'], $datos['precio'],
+        $datos['stock'], $datos['categoria_id'],
+    ]);
+    $id = (int) $db->lastInsertId();
+    return $id;
+}
+```
+
+El valor de `categoria_id` corresponde a una fila de `categoria_producto`. La validación recibirá la lista de IDs existentes para poder comprobarlo sin ejecutar SQL dentro de la función. La clave foránea es una segunda protección si la categoría desaparece antes de insertar.
+
+**Paso 2. Comprueba los datos antes del INSERT.** El nombre admite 120 caracteres y la descripción 1000; se cuenta UTF-8 mediante `preg_match_all()` para no requerir mbstring. Para centrarnos en el INSERT, el precio se comprueba de forma sencilla con `FILTER_VALIDATE_FLOAT`: debe ser un número entre 0 y 999999.99. En este guiado escribimos el separador decimal con punto, por ejemplo `1.25`, y no utilizamos `normalizar_precio()` ni el archivo de apoyo de G6.
+
+**Archivo completo:** `src/validacion_producto.php`.
+
+```php
+<?php
+declare(strict_types=1);
+
+function texto_producto(array $entrada, string $campo): string
+{
+    $valor = $entrada[$campo] ?? '';
+    return is_string($valor) ? $valor : '';
+}
+
+function validar_producto(array $entrada, array $categorias_validas): array
+{
+    $errores = [];
+
+    // 1. Leer los campos del formulario.
+    $nombre = trim(texto_producto($entrada, 'nombre'));
+    $descripcion = trim(texto_producto($entrada, 'descripcion'));
+    $precio = filter_var(texto_producto($entrada, 'precio'), FILTER_VALIDATE_FLOAT);
+    $stock = filter_var(texto_producto($entrada, 'stock'), FILTER_VALIDATE_INT);
+    $categoria = filter_var(texto_producto($entrada, 'categoria_id'), FILTER_VALIDATE_INT);
+
+    // 2. Comprobar cada dato por separado.
+    if ($nombre === '') {
+        $errores['nombre'] = 'El nombre es obligatorio.';
+    }
+
+    if ($precio === false || $precio < 0 || $precio > 999999.99) {
+        $errores['precio'] = 'Introduce un precio entre 0 y 999999.99. Usa punto decimal.';
+    }
+
+    if ($stock === false || $stock < 0 || $stock > 9999) {
+        $errores['stock'] = 'El stock debe ser un entero entre 0 y 9999.';
+    }
+
+    if ($categoria === false || !in_array($categoria, $categorias_validas, true)) {
+        $errores['categoria_id'] = 'Selecciona una categoría existente.';
+    }
+
+    // 3. Preparar los datos que utilizará el INSERT si no hay errores.
+    $datos = [
+        'nombre' => $nombre,
+        'descripcion' => $descripcion,
+        'precio' => $precio,
+        'stock' => $stock,
+        'categoria_id' => $categoria,
+    ];
+
+    return [$datos, $errores];
+}
+```
+
+Solo guardamos cuando `$errores === []`. El array `$datos` no se considera utilizable para un INSERT mientras existan errores. `$valores` conserva el texto original del formulario por separado.
+
+`FILTER_VALIDATE_FLOAT` devuelve un número si puede interpretar la entrada, o `false` si no puede. Por eso usamos `=== false`: el precio `0` es válido. Esta versión no comprueba cuántos decimales se han escrito; MariaDB redondea a dos decimales al almacenar en `DECIMAL(8,2)`. Por ejemplo, `1.234` se guarda como `1.23`. Es una simplificación del guiado; aquí no hacemos cálculos monetarios con el valor convertido.
+
+**Paso 3. Crea la página completa.** Los inputs numéricos son de texto con `inputmode` para conservar incluso entradas inválidas. En el precio indicamos que debe utilizarse punto decimal; no convertimos comas. La validación del servidor es la que decide qué se acepta.
+
+**Archivo completo:** `public/DW8/g7.php`.
+
+```php
+<?php
+declare(strict_types=1);
+require __DIR__ . '/../../src/funciones.php';
+require __DIR__ . '/../../src/bd.php';
+require __DIR__ . '/../../src/productos_bd.php';
+require __DIR__ . '/../../src/validacion_producto.php';
+$valores = ['nombre' => '', 'descripcion' => '', 'precio' => '', 'stock' => '', 'categoria_id' => ''];
+$errores = [];
+$error = '';
+$categorias = [];
+$metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+if ($metodo === 'POST') {
+    foreach ($valores as $campo => $valor) {
+        $valores[$campo] = texto_producto($_POST, $campo);
+    }
+}
+try {
+    $db = conectar();
+    $categorias = listar_categorias_producto($db);
+    $ids_validos = [];
+    foreach ($categorias as $categoria) {
+        $ids_validos[] = (int) $categoria['id'];
+    }
+    if ($metodo === 'POST') {
+        [$datos, $errores] = validar_producto($_POST, $ids_validos);
+        if ($errores !== []) {
+            http_response_code(422);
+        } else {
+            $id = anadir_producto($db, $datos);
+            header('Location: /DW8/g4.php?id=' . $id, true, 303);
+            exit;
+        }
+    }
+} catch (PDOException $e) {
+    http_response_code(500);
+    error_log($e->getMessage());
+    $error = 'No se pudo completar la operación con la base de datos.';
+}
+?>
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><title>G7 · Crear producto</title></head>
+<body>
+<h1>G7 · Crear producto</h1>
+<?php if ($error !== ''): ?>
+    <p role="alert"><?= h($error) ?></p>
+<?php endif; ?>
+<?php if ($errores !== []): ?>
+    <div class="errores"><ul>
+    <?php foreach ($errores as $campo => $mensaje): ?>
+        <li><?= h($campo) ?>: <?= h($mensaje) ?></li>
+    <?php endforeach; ?>
+    </ul></div>
+<?php endif; ?>
+<form method="post" action="/DW8/g7.php">
+    <p><label for="nombre">Nombre</label>
+    <input id="nombre" name="nombre" required maxlength="120" value="<?= h($valores['nombre']) ?>"></p>
+    <p><label for="descripcion">Descripción (opcional)</label>
+    <textarea id="descripcion" name="descripcion" maxlength="1000"><?= h($valores['descripcion']) ?></textarea></p>
+    <p><label for="precio">Precio (usa punto decimal, por ejemplo 1.25)</label>
+    <input id="precio" name="precio" inputmode="decimal" required value="<?= h($valores['precio']) ?>"></p>
+    <p><label for="stock">Stock</label>
+    <input id="stock" name="stock" inputmode="numeric" required value="<?= h($valores['stock']) ?>"></p>
+    <p><label for="categoria_id">Categoría</label>
+    <select id="categoria_id" name="categoria_id" required>
+        <option value="" <?= $valores['categoria_id'] === '' ? 'selected' : '' ?>>Selecciona una categoría</option>
+        <?php foreach ($categorias as $categoria): ?>
+            <option value="<?= (int) $categoria['id'] ?>" <?= $valores['categoria_id'] === (string) $categoria['id'] ? 'selected' : '' ?>><?= h($categoria['nombre']) ?></option>
+        <?php endforeach; ?>
+    </select></p>
+    <?php if (isset($errores['categoria_id'])): ?>
+        <p>Valor recibido para categoría: <?= h($valores['categoria_id']) ?></p>
+    <?php endif; ?>
+    <p><button type="submit" <?= ($error !== '' || $categorias === []) ? 'disabled' : '' ?>>Guardar producto</button></p>
+</form>
+<p><a href="/DW8/g3.php">Volver al catálogo</a></p>
+</body>
+</html>
+```
+
+**Paso 4. Prueba un alta:** nombre `Regla de prueba`, descripción opcional, precio `1.25`, stock `0` y categoría Papelería. Debe guardarse con precio `1.25` y stock cero; el POST responde 303 y la ficha se consulta por GET. El nuevo ID no tiene por qué ser 6: utiliza el que devuelva la base. Comprueba también que se admite un precio de `0`.
+
+**Paso 5. Prueba rechazos:** precio vacío, `tres`, `-1`, `1000000` o `1,25`; stock `tres`; nombre vacío; categoría inexistente. Deben producir 422 sin INSERT. No se rechaza un precio solo por tener tres decimales en esta versión simplificada. Para comprobar una categoría inexistente o una petición manipulada, utiliza las herramientas de desarrollo o curl.
+
+**Paso 6. Comprueba PRG:** actualiza la ficha tres veces; no debe aumentar el número de productos. Una avería de la base produce 500, no una ficha de éxito. Los detalles técnicos quedan en el registro del servidor.
+
+**Fallo provocado y recuperación:** en una copia de la consulta INSERT, cambia temporalmente un nombre de columna por otro inexistente, envía datos válidos y observa el 500. Restaura la consulta. No desactives las comprobaciones del formulario para ocultar una avería SQL.
